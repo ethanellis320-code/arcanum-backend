@@ -2,7 +2,7 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  
+
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
@@ -13,7 +13,15 @@ export default async function handler(req, res) {
 
   try {
     const { system, user } = req.body;
-    
+
+    if (!system || !user) {
+      return res.status(400).json({ error: 'Missing system or user in request body' });
+    }
+
+    if (!process.env.GROQ_API_KEY) {
+      return res.status(500).json({ error: 'GROQ_API_KEY not configured' });
+    }
+
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -21,7 +29,7 @@ export default async function handler(req, res) {
         'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
       },
       body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
+        model: 'llama-3.3-70b-versatile',
         max_tokens: 1200,
         messages: [
           { role: 'system', content: system },
@@ -31,16 +39,20 @@ export default async function handler(req, res) {
     });
 
     const data = await response.json();
-    
+
     if (data.error) {
-      return res.status(400).json({ error: data.error.message });
+      return res.status(400).json({ error: `Groq error: ${data.error.message || JSON.stringify(data.error)}` });
     }
 
-    return res.status(200).json({ 
-      content: data.choices?.[0]?.message?.content || '' 
-    });
+    const content = data.choices?.[0]?.message?.content || '';
+
+    if (!content) {
+      return res.status(500).json({ error: 'Empty response from Groq', raw: JSON.stringify(data) });
+    }
+
+    return res.status(200).json({ content });
 
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: `Server error: ${error.message}` });
   }
 }
